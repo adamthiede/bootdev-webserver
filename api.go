@@ -1,7 +1,11 @@
 package main
+
 import (
-    "fmt"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 )
 
 type apiConfig struct {
@@ -25,4 +29,75 @@ func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/html")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(fmt.Sprintf("<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>", cfg.fileserverHits)))
+}
+func vChirpHandler(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		// these tags indicate how the keys in the JSON should be mapped to the struct fields
+		// the struct fields must be exported (start with a capital letter) if you want them parsed
+		Body string `json:"body"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		// an error will be thrown if the JSON is invalid or has the wrong types
+		// any missing fields will simply have their values in the struct set to their zero value
+		fmt.Printf("Error decoding parameters: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+	// ...
+
+	type returnVals struct {
+		// the key will be the name of struct field unless you give it an explicit JSON tag
+		Error       string `json:"error"`
+		CleanedBody string `json:"cleaned_body"`
+	}
+
+	respBody := returnVals{}
+
+	if len(params.Body) > 140 {
+		respBody.Error = "Chirp is too long"
+		respondWithError(w, 400, "Chirp is too long")
+		return
+	}
+
+	respBody.CleanedBody = cleanupBadWords(params.Body)
+
+	respondWithJSON(w, http.StatusOK, respBody)
+}
+
+func cleanupBadWords(s string) string {
+	badWords := []string{"kerfuffle", "sharbert", "fornax"}
+	ss := strings.Split(s, " ")
+	for i, x := range ss {
+		if slices.Contains(badWords, strings.ToLower(x)) {
+			ss[i] = "****"
+		}
+	}
+	rss := strings.Join(ss, " ")
+	return rss
+}
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	dat, err := json.Marshal(payload)
+	if err != nil {
+		fmt.Printf("Error marshalling JSON: %s\n", err)
+		w.WriteHeader(500)
+		return
+	}
+	w.WriteHeader(code)
+	w.Write(dat)
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+	fmt.Printf("responding with %v: %s\n", code, msg)
+	type errResp struct {
+		Error string `json:"error"`
+	}
+	respondWithJSON(w, code, errResp{
+		Error: msg,
+	})
 }

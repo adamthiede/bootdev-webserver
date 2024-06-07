@@ -34,6 +34,9 @@ func main() {
 	//reset
 	sm.HandleFunc("/api/reset", apiCfg.resetHandler)
 
+	// validateChirp
+	sm.HandleFunc("POST /api/validate_chirp", vChirpHandler)
+
 	// admin metrics
 	adminMetricsHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "text/html; charset=utf-8")
