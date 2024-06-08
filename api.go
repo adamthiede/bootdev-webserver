@@ -45,9 +45,9 @@ func chirpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type returnVals struct {
-		ID          int    `json:"id"`
-		Error       string `json:"error"`
-		Body string `json:"body"`
+		ID    int    `json:"id"`
+		Error string `json:"error"`
+		Body  string `json:"body"`
 	}
 	params := parameters{}
 
@@ -62,15 +62,15 @@ func chirpHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(201)
-		chirp, err :=chirpdb.CreateChirp(params.Body)
-		respBody.ID=chirp.ID
-		fmt.Printf("Added chirp: %s, err %s\n",chirp.Body, err)
+		chirp, err := chirpdb.CreateChirp(params.Body)
+		respBody.ID = chirp.ID
+		fmt.Printf("Added chirp: %s, err %s\n", chirp.Body, err)
 
 	} else if r.Method == "GET" {
 
-		chirps, err:=chirpdb.GetChirps()
-		if err!=nil {
-		    fmt.Printf("Error getting chirps: %s", err) 
+		chirps, err := chirpdb.GetChirps()
+		if err != nil {
+			fmt.Printf("Error getting chirps: %s", err)
 		}
 		fmt.Println(chirps)
 		respondWithJSON(w, http.StatusOK, chirps)

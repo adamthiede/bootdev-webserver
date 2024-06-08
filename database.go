@@ -8,8 +8,8 @@ import (
 )
 
 type Chirp struct {
-    ID int `json:"id"`
-    Body string `json:"body"`
+	ID   int    `json:"id"`
+	Body string `json:"body"`
 }
 
 type DB struct {
@@ -22,18 +22,18 @@ type DBStructure struct {
 }
 
 func NewDB(path string) (*DB, error) {
-    db:=DB{
-	path: path,
-	mux:  &sync.RWMutex{},
-    }
-    db.ensureDB()
-    db.loadDB()
-    return &db, nil
+	db := DB{
+		path: path,
+		mux:  &sync.RWMutex{},
+	}
+	db.ensureDB()
+	db.loadDB()
+	return &db, nil
 }
 
 func (db *DB) ensureDB() error {
-    db.mux.Lock()
-    defer db.mux.Unlock()
+	db.mux.Lock()
+	defer db.mux.Unlock()
 	_, err := os.ReadFile(db.path)
 	if err != nil {
 		os.WriteFile(db.path, nil, 0644)
@@ -42,17 +42,16 @@ func (db *DB) ensureDB() error {
 }
 
 func (db *DB) loadDB() (DBStructure, error) {
-    dbStructure:= DBStructure{Chirps: make(map[int]Chirp)}
-    txt, err:=os.ReadFile(db.path)
-    err = json.Unmarshal(txt, &dbStructure)
-    if err != nil {
-	err = db.writeDB(dbStructure)
-    }
-    return dbStructure, err
+	dbStructure := DBStructure{Chirps: make(map[int]Chirp)}
+	txt, err := os.ReadFile(db.path)
+	err = json.Unmarshal(txt, &dbStructure)
+	if err != nil {
+		err = db.writeDB(dbStructure)
+	}
+	return dbStructure, err
 }
 
-
-func (db *DB) writeDB(dbstructure DBStructure) (error) {
+func (db *DB) writeDB(dbstructure DBStructure) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
 	dbdata, err := json.MarshalIndent(dbstructure, "", "  ")
@@ -68,29 +67,31 @@ func (db *DB) writeDB(dbstructure DBStructure) (error) {
 }
 
 func (db *DB) GetChirps() ([]Chirp, error) {
-    chirps:=make([]Chirp, 0)
-    dbs, err:=db.loadDB()
-    if err!=nil { return chirps, err}
-    for _, n:=range dbs.Chirps {
-	chirps=append(chirps, n)
-    }
+	chirps := make([]Chirp, 0)
+	dbs, err := db.loadDB()
+	if err != nil {
+		return chirps, err
+	}
+	for _, n := range dbs.Chirps {
+		chirps = append(chirps, n)
+	}
 
-    return chirps, nil
+	return chirps, nil
 }
 
 func (db *DB) CreateChirp(body string) (Chirp, error) {
-    chirps, err:=db.GetChirps()
-    if err!=nil {
-	return Chirp{}, err
-    }
-    newID:=len(chirps)+1
-    newChirp:=Chirp{
-	ID: newID,
-	Body: body,
-    }
-    structure, err:=db.loadDB()
-    structure.Chirps[newID] = newChirp
-    db.writeDB(structure)
-    fmt.Printf("Added chirp id %v: %s\n",newID, body)
-    return newChirp, nil
+	chirps, err := db.GetChirps()
+	if err != nil {
+		return Chirp{}, err
+	}
+	newID := len(chirps) + 1
+	newChirp := Chirp{
+		ID:   newID,
+		Body: body,
+	}
+	structure, err := db.loadDB()
+	structure.Chirps[newID] = newChirp
+	db.writeDB(structure)
+	fmt.Printf("Added chirp id %v: %s\n", newID, body)
+	return newChirp, nil
 }
