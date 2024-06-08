@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strconv"
 	"fmt"
 	"net/http"
 	"slices"
@@ -30,6 +31,7 @@ func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(fmt.Sprintf("<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>", cfg.fileserverHits)))
 }
+
 func chirpHandler(w http.ResponseWriter, r *http.Request) {
 
 	chirpdb, err := NewDB("database.json")
@@ -89,6 +91,41 @@ func chirpHandler(w http.ResponseWriter, r *http.Request) {
 	respBody.Body = cleanupBadWords(params.Body)
 
 	respondWithJSON(w, http.StatusOK, respBody)
+}
+
+func getChirpByID(w http.ResponseWriter, r *http.Request) {
+
+	pathVal:=r.PathValue("id")
+	chirpID, err:=strconv.Atoi(pathVal)
+	if err!= nil {
+	    fmt.Printf("Cannot convert %s to integer", pathVal)
+	}
+
+	chirpdb, err := NewDB("database.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+	chirps, err := chirpdb.GetChirps()
+	if err != nil {
+	    fmt.Printf("Error getting chirps: %s", err)
+	}
+	fmt.Println(chirps)
+	if len(chirps)<chirpID {
+	    respondWithError(w, 500, fmt.Sprintf("cannot find chirp %s",pathVal))
+	}
+
+	type parameters struct {
+		Body string `json:"body"`
+	}
+
+	type returnVals struct {
+		ID    int    `json:"id"`
+		Error string `json:"error"`
+		Body  string `json:"body"`
+	}
+
+
+	respondWithJSON(w, http.StatusOK, returnVals{})
 }
 
 func cleanupBadWords(s string) string {

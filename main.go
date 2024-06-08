@@ -36,6 +36,7 @@ func main() {
 
 	// api/chirps
 	sm.HandleFunc("/api/chirps", chirpHandler)
+	sm.HandleFunc("GET /api/chirps/{id}", getChirpByID)
 
 	// admin metrics
 	adminMetricsHandler := func(w http.ResponseWriter, r *http.Request) {
