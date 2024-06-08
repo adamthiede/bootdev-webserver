@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"errors"
 )
 
 type Chirp struct {
@@ -77,6 +78,18 @@ func (db *DB) GetChirps() ([]Chirp, error) {
 	}
 
 	return chirps, nil
+}
+
+func (db *DB) GetChirp(id int) (Chirp, error) {
+    dbs, err:=db.loadDB()
+    if err != nil {
+	return Chirp{}, err
+    }
+    emptyChirp:=Chirp{}
+    if dbs.Chirps[id] == emptyChirp {
+	return emptyChirp, errors.New("not found" )
+    }
+    return dbs.Chirps[id], nil
 }
 
 func (db *DB) CreateChirp(body string) (Chirp, error) {

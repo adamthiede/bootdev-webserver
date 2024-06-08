@@ -13,6 +13,12 @@ type apiConfig struct {
 	fileserverHits int
 }
 
+type returnVals struct {
+    ID    int    `json:"id"`
+    Error string `json:"error"`
+    Body  string `json:"body"`
+}
+
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.fileserverHits++
@@ -41,16 +47,9 @@ func chirpHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("loaded db %s\n", chirpdb.path)
 
 	type parameters struct {
-		// these tags indicate how the keys in the JSON should be mapped to the struct fields
-		// the struct fields must be exported (start with a capital letter) if you want them parsed
 		Body string `json:"body"`
 	}
 
-	type returnVals struct {
-		ID    int    `json:"id"`
-		Error string `json:"error"`
-		Body  string `json:"body"`
-	}
 	params := parameters{}
 
 	respBody := returnVals{}
@@ -98,34 +97,28 @@ func getChirpByID(w http.ResponseWriter, r *http.Request) {
 	pathVal:=r.PathValue("id")
 	chirpID, err:=strconv.Atoi(pathVal)
 	if err!= nil {
-	    fmt.Printf("Cannot convert %s to integer", pathVal)
+	    fmt.Printf("Cannot convert %s to integer\n", pathVal)
 	}
 
 	chirpdb, err := NewDB("database.json")
 	if err != nil {
 		fmt.Println(err)
 	}
-	chirps, err := chirpdb.GetChirps()
+
+	chirp, err := chirpdb.GetChirp(chirpID)
 	if err != nil {
-	    fmt.Printf("Error getting chirps: %s", err)
-	}
-	fmt.Println(chirps)
-	if len(chirps)<chirpID {
-	    respondWithError(w, 500, fmt.Sprintf("cannot find chirp %s",pathVal))
+	    msg:=fmt.Sprintf("Chirp does not exist: %s", err)
+	    respondWithError(w, 404, msg)
+	    return
 	}
 
-	type parameters struct {
-		Body string `json:"body"`
+	fmt.Printf("Getting chirp %v\n", chirpID)
+	retVals:=returnVals{
+	    ID: chirpID,
+	    Body: chirp.Body,
 	}
 
-	type returnVals struct {
-		ID    int    `json:"id"`
-		Error string `json:"error"`
-		Body  string `json:"body"`
-	}
-
-
-	respondWithJSON(w, http.StatusOK, returnVals{})
+	respondWithJSON(w, http.StatusOK, retVals)
 }
 
 func cleanupBadWords(s string) string {
