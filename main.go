@@ -1,13 +1,22 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 )
 
 func main() {
 	fmt.Println("Serving the web.")
+
+	debugOn := flag.Bool("debug", false, "path to config file")
+	flag.Parse()
+	fmt.Println(debugOn)
+	if *debugOn {
+		os.Remove("database.json")
+	}
 
 	apiCfg := apiConfig{
 		fileserverHits: 0,
