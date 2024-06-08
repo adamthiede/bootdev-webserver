@@ -11,6 +11,7 @@ import (
 type User struct {
 	ID    int    `json:"id"`
 	Email string `json:"email"`
+	Password []byte `json:"password"`
 }
 type Chirp struct {
 	ID   int    `json:"id"`
@@ -136,12 +137,26 @@ func (db *DB) GetUser(id int) (User, error) {
 	if err != nil {
 		return emptyUser, err
 	}
-	if dbs.Users[id] == emptyUser {
+	if len(dbs.Users[id].Email)==0 {
 		return emptyUser, errors.New("not found")
 	}
 	return dbs.Users[id], nil
 }
-func (db *DB) CreateUser(email string) (User, error) {
+func (db *DB) GetUserByEmail(email string) (User, error) {
+	emptyUser := User{}
+	dbs, err := db.loadDB()
+	if err != nil {
+		return emptyUser, err
+	}
+	for i :=  1;i<=len(dbs.Users); i++ {
+	    if dbs.Users[i].Email == email {
+		return dbs.Users[i], nil
+	    }
+	}
+	return emptyUser, errors.New("User not found")
+}
+
+func (db *DB) CreateUser(email string, password []byte) (User, error) {
 	users, err := db.GetUsers()
 	if err != nil {
 		return User{}, err
@@ -150,6 +165,7 @@ func (db *DB) CreateUser(email string) (User, error) {
 	newUser := User{
 		ID:    newID,
 		Email: email,
+		Password: password,
 	}
 	structure, err := db.loadDB()
 	structure.Users[newID] = newUser

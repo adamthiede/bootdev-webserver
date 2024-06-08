@@ -49,6 +49,7 @@ func main() {
 	// api/users
 	sm.HandleFunc("/api/users", userHandler)
 	sm.HandleFunc("GET /api/users/{id}", getUserByID)
+	sm.HandleFunc("POST /api/login", loginUser)
 
 	// admin metrics
 	adminMetricsHandler := func(w http.ResponseWriter, r *http.Request) {

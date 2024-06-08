@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"slices"
 	"strconv"
@@ -130,7 +131,8 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("loaded db %s\n", chirpdb.path)
 
 	type parameters struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	params := parameters{}
@@ -151,7 +153,13 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(201)
-		user, err := chirpdb.CreateUser(params.Email)
+		encryptedPassword, err := bcrypt.GenerateFromPassword([]byte(params.Password), 4)
+		if err != nil {
+			fmt.Printf("Error generating password: %s\n", err)
+			w.WriteHeader(500)
+			return
+		}
+		user, err := chirpdb.CreateUser(params.Email, encryptedPassword)
 		respBody.ID = user.ID
 		fmt.Printf("Added user: %s, err %s\n", user.Email, err)
 
@@ -202,6 +210,56 @@ func getUserByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, retVals)
+}
+
+func loginUser(w http.ResponseWriter, r *http.Request) {
+
+	type parameters struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	type returnVals struct {
+		ID    int    `json:"id"`
+		Email string `json:"email"`
+	}
+
+	chirpdb, err := NewDB("database.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	params := parameters{}
+	decoder := json.NewDecoder(r.Body)
+	err = decoder.Decode(&params)
+	if err != nil {
+		fmt.Printf("Error decoding parameters: %s\n", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	user, err := chirpdb.GetUserByEmail(params.Email)
+	if err != nil {
+		msg := fmt.Sprintf("User does not exist: %s", err)
+		respondWithError(w, 404, msg)
+		return
+	}
+
+	retVals := returnVals{
+		ID:    user.ID,
+		Email: user.Email,
+	}
+
+	if err != nil {
+		fmt.Println("Error decoding password")
+	}
+	err = bcrypt.CompareHashAndPassword(user.Password, []byte(params.Password))
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Wrong password")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, retVals)
+
 }
 
 func cleanupBadWords(s string) string {
