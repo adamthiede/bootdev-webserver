@@ -30,40 +30,63 @@ func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(fmt.Sprintf("<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>", cfg.fileserverHits)))
 }
-func vChirpHandler(w http.ResponseWriter, r *http.Request) {
+func chirpHandler(w http.ResponseWriter, r *http.Request) {
+
+	chirpdb, err := NewDB("database.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Printf("loaded db %s\n", chirpdb.path)
+
 	type parameters struct {
 		// these tags indicate how the keys in the JSON should be mapped to the struct fields
 		// the struct fields must be exported (start with a capital letter) if you want them parsed
 		Body string `json:"body"`
 	}
 
-	decoder := json.NewDecoder(r.Body)
-	params := parameters{}
-	err := decoder.Decode(&params)
-	if err != nil {
-		// an error will be thrown if the JSON is invalid or has the wrong types
-		// any missing fields will simply have their values in the struct set to their zero value
-		fmt.Printf("Error decoding parameters: %s", err)
-		w.WriteHeader(500)
-		return
-	}
-	// ...
-
 	type returnVals struct {
-		// the key will be the name of struct field unless you give it an explicit JSON tag
+		ID          int    `json:"id"`
 		Error       string `json:"error"`
-		CleanedBody string `json:"cleaned_body"`
+		Body string `json:"body"`
 	}
+	params := parameters{}
 
 	respBody := returnVals{}
+
+	if r.Method == "POST" {
+		decoder := json.NewDecoder(r.Body)
+		err := decoder.Decode(&params)
+		if err != nil {
+			fmt.Printf("Error decoding parameters: %s\n", err)
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(201)
+		chirp, err :=chirpdb.CreateChirp(params.Body)
+		respBody.ID=chirp.ID
+		fmt.Printf("Added chirp: %s, err %s\n",chirp.Body, err)
+
+	} else if r.Method == "GET" {
+
+		chirps, err:=chirpdb.GetChirps()
+		if err!=nil {
+		    fmt.Printf("Error getting chirps: %s", err) 
+		}
+		fmt.Println(chirps)
+		respondWithJSON(w, http.StatusOK, chirps)
+
+		return
+	} else {
+		fmt.Printf("Method %s not allowed\n", r.Method)
+		return
+	}
 
 	if len(params.Body) > 140 {
 		respBody.Error = "Chirp is too long"
 		respondWithError(w, 400, "Chirp is too long")
 		return
 	}
-
-	respBody.CleanedBody = cleanupBadWords(params.Body)
+	respBody.Body = cleanupBadWords(params.Body)
 
 	respondWithJSON(w, http.StatusOK, respBody)
 }
