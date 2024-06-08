@@ -2,12 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
-	"errors"
 )
 
+type User struct {
+	ID    int    `json:"id"`
+	Email string `json:"email"`
+}
 type Chirp struct {
 	ID   int    `json:"id"`
 	Body string `json:"body"`
@@ -20,6 +24,7 @@ type DB struct {
 
 type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
+	Users  map[int]User  `json:"users"`
 }
 
 func NewDB(path string) (*DB, error) {
@@ -43,7 +48,10 @@ func (db *DB) ensureDB() error {
 }
 
 func (db *DB) loadDB() (DBStructure, error) {
-	dbStructure := DBStructure{Chirps: make(map[int]Chirp)}
+	dbStructure := DBStructure{
+		Chirps: make(map[int]Chirp),
+		Users:  make(map[int]User),
+	}
 	txt, err := os.ReadFile(db.path)
 	err = json.Unmarshal(txt, &dbStructure)
 	if err != nil {
@@ -81,15 +89,15 @@ func (db *DB) GetChirps() ([]Chirp, error) {
 }
 
 func (db *DB) GetChirp(id int) (Chirp, error) {
-    dbs, err:=db.loadDB()
-    if err != nil {
-	return Chirp{}, err
-    }
-    emptyChirp:=Chirp{}
-    if dbs.Chirps[id] == emptyChirp {
-	return emptyChirp, errors.New("not found" )
-    }
-    return dbs.Chirps[id], nil
+	dbs, err := db.loadDB()
+	if err != nil {
+		return Chirp{}, err
+	}
+	emptyChirp := Chirp{}
+	if dbs.Chirps[id] == emptyChirp {
+		return emptyChirp, errors.New("not found")
+	}
+	return dbs.Chirps[id], nil
 }
 
 func (db *DB) CreateChirp(body string) (Chirp, error) {
@@ -107,4 +115,45 @@ func (db *DB) CreateChirp(body string) (Chirp, error) {
 	db.writeDB(structure)
 	fmt.Printf("Added chirp id %v: %s\n", newID, body)
 	return newChirp, nil
+}
+
+func (db *DB) GetUsers() ([]User, error) {
+	users := make([]User, 0)
+	dbs, err := db.loadDB()
+	if err != nil {
+		return users, err
+	}
+	for _, n := range dbs.Users {
+		users = append(users, n)
+	}
+
+	return users, nil
+}
+
+func (db *DB) GetUser(id int) (User, error) {
+	emptyUser := User{}
+	dbs, err := db.loadDB()
+	if err != nil {
+		return emptyUser, err
+	}
+	if dbs.Users[id] == emptyUser {
+		return emptyUser, errors.New("not found")
+	}
+	return dbs.Users[id], nil
+}
+func (db *DB) CreateUser(email string) (User, error) {
+	users, err := db.GetUsers()
+	if err != nil {
+		return User{}, err
+	}
+	newID := len(users) + 1
+	newUser := User{
+		ID:    newID,
+		Email: email,
+	}
+	structure, err := db.loadDB()
+	structure.Users[newID] = newUser
+	db.writeDB(structure)
+	fmt.Printf("Added user id %v: %s\n", newID, email)
+	return newUser, nil
 }

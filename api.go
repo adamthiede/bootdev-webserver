@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
-	"strconv"
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -14,9 +14,9 @@ type apiConfig struct {
 }
 
 type returnVals struct {
-    ID    int    `json:"id"`
-    Error string `json:"error"`
-    Body  string `json:"body"`
+	ID    int    `json:"id"`
+	Error string `json:"error"`
+	Body  string `json:"body"`
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -94,10 +94,10 @@ func chirpHandler(w http.ResponseWriter, r *http.Request) {
 
 func getChirpByID(w http.ResponseWriter, r *http.Request) {
 
-	pathVal:=r.PathValue("id")
-	chirpID, err:=strconv.Atoi(pathVal)
-	if err!= nil {
-	    fmt.Printf("Cannot convert %s to integer\n", pathVal)
+	pathVal := r.PathValue("id")
+	chirpID, err := strconv.Atoi(pathVal)
+	if err != nil {
+		fmt.Printf("Cannot convert %s to integer\n", pathVal)
 	}
 
 	chirpdb, err := NewDB("database.json")
@@ -107,15 +107,98 @@ func getChirpByID(w http.ResponseWriter, r *http.Request) {
 
 	chirp, err := chirpdb.GetChirp(chirpID)
 	if err != nil {
-	    msg:=fmt.Sprintf("Chirp does not exist: %s", err)
-	    respondWithError(w, 404, msg)
-	    return
+		msg := fmt.Sprintf("Chirp does not exist: %s", err)
+		respondWithError(w, 404, msg)
+		return
 	}
 
 	fmt.Printf("Getting chirp %v\n", chirpID)
-	retVals:=returnVals{
-	    ID: chirpID,
-	    Body: chirp.Body,
+	retVals := returnVals{
+		ID:   chirpID,
+		Body: chirp.Body,
+	}
+
+	respondWithJSON(w, http.StatusOK, retVals)
+}
+
+func userHandler(w http.ResponseWriter, r *http.Request) {
+
+	chirpdb, err := NewDB("database.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Printf("loaded db %s\n", chirpdb.path)
+
+	type parameters struct {
+		Email string `json:"email"`
+	}
+
+	params := parameters{}
+
+	type returnVals struct {
+		ID    int    `json:"id"`
+		Error string `json:"error"`
+		Email string `json:"email"`
+	}
+	respBody := returnVals{}
+
+	if r.Method == "POST" {
+		decoder := json.NewDecoder(r.Body)
+		err := decoder.Decode(&params)
+		if err != nil {
+			fmt.Printf("Error decoding parameters: %s\n", err)
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(201)
+		user, err := chirpdb.CreateUser(params.Email)
+		respBody.ID = user.ID
+		fmt.Printf("Added user: %s, err %s\n", user.Email, err)
+
+	} else if r.Method == "GET" {
+
+		users, err := chirpdb.GetUsers()
+		if err != nil {
+			fmt.Printf("Error getting users: %s", err)
+		}
+		fmt.Println(users)
+		respondWithJSON(w, http.StatusOK, users)
+
+		return
+	} else {
+		fmt.Printf("Method %s not allowed\n", r.Method)
+		return
+	}
+
+	respBody.Email = params.Email
+
+	respondWithJSON(w, http.StatusOK, respBody)
+}
+
+func getUserByID(w http.ResponseWriter, r *http.Request) {
+
+	pathVal := r.PathValue("id")
+	userID, err := strconv.Atoi(pathVal)
+	if err != nil {
+		fmt.Printf("Cannot convert %s to integer\n", pathVal)
+	}
+
+	chirpdb, err := NewDB("database.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	user, err := chirpdb.GetUser(userID)
+	if err != nil {
+		msg := fmt.Sprintf("User does not exist: %s", err)
+		respondWithError(w, 404, msg)
+		return
+	}
+
+	fmt.Printf("Getting user %v\n", user)
+	retVals := returnVals{
+		ID:   userID,
+		Body: user.Email,
 	}
 
 	respondWithJSON(w, http.StatusOK, retVals)
