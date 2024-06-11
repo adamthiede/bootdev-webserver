@@ -183,6 +183,14 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 
 		return
 	} else if r.Method == "PUT" {
+		decoder := json.NewDecoder(r.Body)
+		err := decoder.Decode(&params)
+		if err != nil {
+			fmt.Printf("Error decoding parameters: %s\n", err)
+			w.WriteHeader(500)
+			return
+		}
+		fmt.Printf("requesting to update user %s\n", params.Email)
 		godotenv.Load()
 		jwtSecret := os.Getenv("JWT_SECRET")
 		// authorization header required
@@ -200,11 +208,13 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			fmt.Printf("%s\n", err)
 			respondWithError(w, 401, "Authorization failed: couldn't parse token")
+			return
 		} else if claims, ok := token.Claims.(*MyCustomClaims); ok {
 			fmt.Printf("Got token: %s, %s\n", claims.Issuer, claims.ID)
 		} else {
 			fmt.Printf("couldn't get token claims:%s, %t\n", err, ok)
 			respondWithError(w, 401, "Authorization failed!")
+			return
 		}
 		if token.Valid {
 			userID, err := token.Claims.GetSubject()
@@ -221,7 +231,21 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			fmt.Printf("Got user! %s %v \n", user.Email, user.ID)
-
+			encryptedPassword, err := bcrypt.GenerateFromPassword([]byte(params.Password), 4)
+			if err != nil {
+			    fmt.Printf("Error generating password: %s\n", err)
+			    w.WriteHeader(500)
+			    return
+			}
+			upUser, err:=chirpdb.UpdateUser(userIDI, params.Email, encryptedPassword)
+			if err != nil {
+				erro := fmt.Sprintf("couldn't update user: %s", err)
+				respondWithError(w, 500, erro)
+				return
+			}
+			respBody.ID = upUser.ID
+			respBody.Email= upUser.Email
+			respondWithJSON(w, http.StatusOK, respBody)
 		}
 		return
 
