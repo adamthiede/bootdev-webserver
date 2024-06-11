@@ -3,12 +3,21 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
+
+type MyCustomClaims struct {
+	Foo string `json:"foo"`
+	jwt.RegisteredClaims
+}
 
 type apiConfig struct {
 	fileserverHits int
@@ -173,6 +182,49 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 		respondWithJSON(w, http.StatusOK, users)
 
 		return
+	} else if r.Method == "PUT" {
+		godotenv.Load()
+		jwtSecret := os.Getenv("JWT_SECRET")
+		// authorization header required
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			respondWithError(w, 401, "Authorization header required")
+			return
+		}
+		authTokenS := strings.Split(authHeader, " ")
+		authToken := authTokenS[len(authTokenS)-1]
+		fmt.Printf("You sent %s\n", authToken)
+		token, err := jwt.ParseWithClaims(authToken, &MyCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+			return []byte(jwtSecret), nil
+		})
+		if err != nil {
+			fmt.Printf("%s\n", err)
+			respondWithError(w, 401, "Authorization failed: couldn't parse token")
+		} else if claims, ok := token.Claims.(*MyCustomClaims); ok {
+			fmt.Printf("Got token: %s, %s\n", claims.Issuer, claims.ID)
+		} else {
+			fmt.Printf("couldn't get token claims:%s, %t\n", err, ok)
+			respondWithError(w, 401, "Authorization failed!")
+		}
+		if token.Valid {
+			userID, err := token.Claims.GetSubject()
+			if err != nil {
+				respondWithError(w, 401, "Authorization failed: couldn't parse token")
+				return
+			}
+			userIDI, err := strconv.Atoi(userID)
+			fmt.Printf("Got valid token for user %v\n", userIDI)
+			user, err := chirpdb.GetUser(userIDI)
+			if err != nil {
+				erro := fmt.Sprintf("Couldn't get user from token: %s", err)
+				respondWithError(w, 401, erro)
+				return
+			}
+			fmt.Printf("Got user! %s %v \n", user.Email, user.ID)
+
+		}
+		return
+
 	} else {
 		fmt.Printf("Method %s not allowed\n", r.Method)
 		return
@@ -214,14 +266,19 @@ func getUserByID(w http.ResponseWriter, r *http.Request) {
 
 func loginUser(w http.ResponseWriter, r *http.Request) {
 
+	godotenv.Load()
+	jwtSecret := os.Getenv("JWT_SECRET")
+
 	type parameters struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email            string `json:"email"`
+		Password         string `json:"password"`
+		ExpiresInSeconds int    `json:"expires_in_seconds"`
 	}
 
 	type returnVals struct {
 		ID    int    `json:"id"`
 		Email string `json:"email"`
+		Token string `json:"token"`
 	}
 
 	chirpdb, err := NewDB("database.json")
@@ -245,9 +302,33 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	expire_time := jwt.NewNumericDate(time.Now().Add(time.Hour * 24))
+	if params.ExpiresInSeconds != 0 {
+		expire_time = jwt.NewNumericDate(time.Now().Add(time.Second * time.Duration(params.ExpiresInSeconds)))
+	}
+
+	claims := MyCustomClaims{
+		"bar",
+		jwt.RegisteredClaims{
+			Issuer:    "Chirpy",
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: expire_time,
+			Subject:   fmt.Sprintf("%v", user.ID),
+		},
+	}
+
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	ss, err := jwtToken.SignedString([]byte(jwtSecret))
+	if err != nil {
+		fmt.Printf("Token error: %s %s\n", ss, err)
+		respondWithError(w, http.StatusUnauthorized, "Couldn't produce token")
+		return
+	}
+
 	retVals := returnVals{
 		ID:    user.ID,
 		Email: user.Email,
+		Token: ss,
 	}
 
 	if err != nil {
