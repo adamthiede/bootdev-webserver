@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 )
 
 type User struct {
-	ID       int    `json:"id"`
-	Email    string `json:"email"`
-	Password []byte `json:"password"`
+	ID                 int       `json:"id"`
+	Email              string    `json:"email"`
+	Password           []byte    `json:"password"`
+	RefreshToken       string    `json:"refresh_token"`
+	RefreshTokenExpiry time.Time `json:"refresh_token_expiry"`
 }
 type Chirp struct {
 	ID   int    `json:"id"`
@@ -142,6 +145,7 @@ func (db *DB) GetUser(id int) (User, error) {
 	}
 	return dbs.Users[id], nil
 }
+
 func (db *DB) GetUserByEmail(email string) (User, error) {
 	emptyUser := User{}
 	dbs, err := db.loadDB()
@@ -154,6 +158,24 @@ func (db *DB) GetUserByEmail(email string) (User, error) {
 		}
 	}
 	return emptyUser, errors.New("User not found")
+}
+
+func (db *DB) GetUserByRefreshToken(refreshToken string) (User, error) {
+	emptyUser := User{}
+	dbs, err := db.loadDB()
+	if err != nil {
+		return emptyUser, err
+	}
+	for i := 1; i <= len(dbs.Users); i++ {
+		if dbs.Users[i].RefreshToken == refreshToken {
+			if dbs.Users[i].RefreshTokenExpiry.Before(time.Now()) {
+				return emptyUser, errors.New("Token has expired")
+			} else {
+				return dbs.Users[i], nil
+			}
+		}
+	}
+	return emptyUser, errors.New("User matching token not found")
 }
 
 func (db *DB) CreateUser(email string, password []byte) (User, error) {
@@ -186,5 +208,23 @@ func (db *DB) UpdateUser(id int, email string, password []byte) (User, error) {
 	}
 	db.writeDB(structure)
 	fmt.Printf("Updated user %v: %s\n", id, email)
+	return db.GetUser(id)
+}
+func (db *DB) AddRefreshToken(id int, refreshToken string) (User, error) {
+	structure, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+	user := structure.Users[id]
+	expiryDate := time.Now().Add(time.Hour * 24 * 60)
+	structure.Users[id] = User{
+		ID:                 user.ID,
+		Email:              user.Email,
+		Password:           user.Password,
+		RefreshToken:       refreshToken,
+		RefreshTokenExpiry: expiryDate,
+	}
+	db.writeDB(structure)
+	fmt.Printf("added token to user %v: %s\n", id, refreshToken)
 	return db.GetUser(id)
 }

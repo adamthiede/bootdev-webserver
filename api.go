@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
@@ -201,7 +203,6 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		authTokenS := strings.Split(authHeader, " ")
 		authToken := authTokenS[len(authTokenS)-1]
-		fmt.Printf("You sent %s\n", authToken)
 		token, err := jwt.ParseWithClaims(authToken, &MyCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
 			return []byte(jwtSecret), nil
 		})
@@ -233,18 +234,18 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("Got user! %s %v \n", user.Email, user.ID)
 			encryptedPassword, err := bcrypt.GenerateFromPassword([]byte(params.Password), 4)
 			if err != nil {
-			    fmt.Printf("Error generating password: %s\n", err)
-			    w.WriteHeader(500)
-			    return
+				fmt.Printf("Error generating password: %s\n", err)
+				w.WriteHeader(500)
+				return
 			}
-			upUser, err:=chirpdb.UpdateUser(userIDI, params.Email, encryptedPassword)
+			upUser, err := chirpdb.UpdateUser(userIDI, params.Email, encryptedPassword)
 			if err != nil {
 				erro := fmt.Sprintf("couldn't update user: %s", err)
 				respondWithError(w, 500, erro)
 				return
 			}
 			respBody.ID = upUser.ID
-			respBody.Email= upUser.Email
+			respBody.Email = upUser.Email
 			respondWithJSON(w, http.StatusOK, respBody)
 		}
 		return
@@ -288,10 +289,26 @@ func getUserByID(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, retVals)
 }
 
-func loginUser(w http.ResponseWriter, r *http.Request) {
-
+func generateToken(userID int) (string, error) {
 	godotenv.Load()
 	jwtSecret := os.Getenv("JWT_SECRET")
+	claims := MyCustomClaims{
+		"bar",
+		jwt.RegisteredClaims{
+			Issuer:   "Chirpy",
+			IssuedAt: jwt.NewNumericDate(time.Now()),
+			//ExpiresAt: expire_time,
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			Subject:   fmt.Sprintf("%v", userID),
+		},
+	}
+
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	ss, err := jwtToken.SignedString([]byte(jwtSecret))
+	return ss, err
+}
+
+func loginUser(w http.ResponseWriter, r *http.Request) {
 
 	type parameters struct {
 		Email            string `json:"email"`
@@ -300,9 +317,10 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type returnVals struct {
-		ID    int    `json:"id"`
-		Email string `json:"email"`
-		Token string `json:"token"`
+		ID           int    `json:"id"`
+		Email        string `json:"email"`
+		Token        string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
 	}
 
 	chirpdb, err := NewDB("database.json")
@@ -326,33 +344,36 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expire_time := jwt.NewNumericDate(time.Now().Add(time.Hour * 24))
-	if params.ExpiresInSeconds != 0 {
-		expire_time = jwt.NewNumericDate(time.Now().Add(time.Second * time.Duration(params.ExpiresInSeconds)))
-	}
+	/*
+		expire_time := jwt.NewNumericDate(time.Now().Add(time.Hour * 24))
+		if params.ExpiresInSeconds != 0 {
+		    expire_time = jwt.NewNumericDate(time.Now().Add(time.Second * time.Duration(params.ExpiresInSeconds)))
+		}
+	*/
 
-	claims := MyCustomClaims{
-		"bar",
-		jwt.RegisteredClaims{
-			Issuer:    "Chirpy",
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: expire_time,
-			Subject:   fmt.Sprintf("%v", user.ID),
-		},
-	}
-
-	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	ss, err := jwtToken.SignedString([]byte(jwtSecret))
+	ss, err := generateToken(user.ID)
 	if err != nil {
 		fmt.Printf("Token error: %s %s\n", ss, err)
 		respondWithError(w, http.StatusUnauthorized, "Couldn't produce token")
 		return
 	}
 
+	// create refresh token as random text
+	b := make([]byte, 32)
+	_, err = rand.Read(b)
+	if err != nil {
+		fmt.Println("error reading random data?:", err)
+		return
+	}
+	refreshToken := hex.EncodeToString(b)
+	chirpdb.AddRefreshToken(user.ID, refreshToken)
+	fmt.Printf("refresh token added to %v: %s\n", user.ID, user.RefreshToken)
+
 	retVals := returnVals{
-		ID:    user.ID,
-		Email: user.Email,
-		Token: ss,
+		ID:           user.ID,
+		Email:        user.Email,
+		Token:        ss,
+		RefreshToken: refreshToken,
 	}
 
 	if err != nil {
@@ -364,7 +385,44 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondWithJSON(w, http.StatusOK, retVals)
+}
 
+func refreshToken(w http.ResponseWriter, r *http.Request) {
+
+
+	type returnVals struct {
+		Token        string `json:"token"`
+	}
+
+	chirpdb, err := NewDB("database.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+	    respondWithError(w, 401, "Authorization header required")
+	    return
+	}
+	authTokenS := strings.Split(authHeader, " ")
+	authToken := authTokenS[len(authTokenS)-1]
+	fmt.Printf("You sent %s\n", authToken)
+
+	user, err:=chirpdb.GetUserByRefreshToken(authToken)
+	if err!= nil {
+	    respondWithError(w, 401, fmt.Sprintf("GetUserByRefreshToken err: %s",err))
+	    return
+	}
+	token, err :=generateToken(user.ID)
+	retVals := returnVals{
+		Token:        token,
+	}
+	respondWithJSON(w, http.StatusOK, retVals)
+}
+
+func revokeToken(w http.ResponseWriter, r *http.Request) {
+
+	//respondWithJSON(w, http.StatusOK, retVals)
 }
 
 func cleanupBadWords(s string) string {
