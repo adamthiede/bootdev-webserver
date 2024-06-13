@@ -366,8 +366,8 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	refreshToken := hex.EncodeToString(b)
-	chirpdb.AddRefreshToken(user.ID, refreshToken)
-	fmt.Printf("refresh token added to %v: %s\n", user.ID, user.RefreshToken)
+	user, err = chirpdb.AddRefreshToken(user.ID, refreshToken)
+	fmt.Printf("refresh token added to %v: %s\n", user.ID, user.RefreshToken.Token)
 
 	retVals := returnVals{
 		ID:           user.ID,
@@ -421,8 +421,28 @@ func refreshToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func revokeToken(w http.ResponseWriter, r *http.Request) {
+	chirpdb, err := NewDB("database.json")
+	if err != nil {
+		fmt.Println(err)
+	}
 
-	//respondWithJSON(w, http.StatusOK, retVals)
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+	    respondWithError(w, 401, "Authorization header required")
+	    return
+	}
+	authTokenS := strings.Split(authHeader, " ")
+	authToken := authTokenS[len(authTokenS)-1]
+	fmt.Printf("You sent %s\n", authToken)
+
+	user, err:=chirpdb.GetUserByRefreshToken(authToken)
+	if err!= nil {
+	    respondWithError(w, 401, fmt.Sprintf("GetUserByRefreshToken err: %s",err))
+	    return
+	}
+	chirpdb.RevokeRefreshToken(user.ID)
+
+	respondWithJSON(w, 204, "")
 }
 
 func cleanupBadWords(s string) string {

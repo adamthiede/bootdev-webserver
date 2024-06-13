@@ -9,12 +9,16 @@ import (
 	"time"
 )
 
+type RefreshToken struct {
+	Token  string    `json:"token"`
+	Expiry time.Time `json:"expiry"`
+}
+
 type User struct {
-	ID                 int       `json:"id"`
-	Email              string    `json:"email"`
-	Password           []byte    `json:"password"`
-	RefreshToken       string    `json:"refresh_token"`
-	RefreshTokenExpiry time.Time `json:"refresh_token_expiry"`
+	ID           int          `json:"id"`
+	Email        string       `json:"email"`
+	Password     []byte       `json:"password"`
+	RefreshToken RefreshToken `json:"refresh_token"`
 }
 type Chirp struct {
 	ID   int    `json:"id"`
@@ -75,6 +79,7 @@ func (db *DB) writeDB(dbstructure DBStructure) error {
 	if err != nil {
 		return err
 	}
+	fmt.Printf("Marshaled JSON data: %s\n", string(dbdata))
 	fmt.Printf("wrote database to %s\n", db.path)
 	return nil
 }
@@ -167,8 +172,8 @@ func (db *DB) GetUserByRefreshToken(refreshToken string) (User, error) {
 		return emptyUser, err
 	}
 	for i := 1; i <= len(dbs.Users); i++ {
-		if dbs.Users[i].RefreshToken == refreshToken {
-			if dbs.Users[i].RefreshTokenExpiry.Before(time.Now()) {
+		if dbs.Users[i].RefreshToken.Token == refreshToken {
+			if dbs.Users[i].RefreshToken.Expiry.Before(time.Now()) {
 				return emptyUser, errors.New("Token has expired")
 			} else {
 				return dbs.Users[i], nil
@@ -202,9 +207,10 @@ func (db *DB) UpdateUser(id int, email string, password []byte) (User, error) {
 		return User{}, err
 	}
 	structure.Users[id] = User{
-		ID:       id,
-		Email:    email,
-		Password: password,
+		ID:           id,
+		Email:        email,
+		Password:     password,
+		RefreshToken: structure.Users[id].RefreshToken,
 	}
 	db.writeDB(structure)
 	fmt.Printf("Updated user %v: %s\n", id, email)
@@ -215,16 +221,31 @@ func (db *DB) AddRefreshToken(id int, refreshToken string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	user := structure.Users[id]
+
 	expiryDate := time.Now().Add(time.Hour * 24 * 60)
-	structure.Users[id] = User{
-		ID:                 user.ID,
-		Email:              user.Email,
-		Password:           user.Password,
-		RefreshToken:       refreshToken,
-		RefreshTokenExpiry: expiryDate,
+
+	user := structure.Users[id]
+	user.RefreshToken.Token = refreshToken
+	user.RefreshToken.Expiry = expiryDate
+	structure.Users[id] = user
+	err = db.writeDB(structure)
+	if err != nil {
+		return User{}, err
 	}
-	db.writeDB(structure)
-	fmt.Printf("added token to user %v: %s\n", id, refreshToken)
 	return db.GetUser(id)
+}
+func (db *DB) RevokeRefreshToken(id int) error {
+	structure, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+
+	user := structure.Users[id]
+	user.RefreshToken = RefreshToken{}
+	structure.Users[id] = user
+	err = db.writeDB(structure)
+	if err != nil {
+		return err
+	}
+	return nil
 }
