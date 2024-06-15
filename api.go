@@ -51,6 +51,12 @@ func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func chirpHandler(w http.ResponseWriter, r *http.Request) {
+	type returnVals struct {
+		ID       int    `json:"id"`
+		Error    string `json:"error"`
+		Body     string `json:"body"`
+		AuthorID int    `json:"author_id"`
+	}
 
 	chirpdb, err := NewDB("database.json")
 	if err != nil {
@@ -75,10 +81,19 @@ func chirpHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(201)
-		chirp, err := chirpdb.CreateChirp(params.Body)
-		respBody.ID = chirp.ID
-		fmt.Printf("Added chirp: %s, err %s\n", chirp.Body, err)
+		// log in the user here
 
+		validity, userID := IsJWTValid(w, r)
+		if !validity {
+			return
+		} else {
+			fmt.Printf("Got valid JWT for %v\n", userID)
+		}
+
+		chirp, err := chirpdb.CreateChirp(params.Body, userID)
+		respBody.ID = chirp.ID
+		respBody.AuthorID = chirp.AuthorID
+		fmt.Printf("Added chirp: %s, err %s\n", chirp.Body, err)
 	} else if r.Method == "GET" {
 
 		chirps, err := chirpdb.GetChirps()
@@ -131,6 +146,42 @@ func getChirpByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, retVals)
+}
+
+func deleteChirp(w http.ResponseWriter, r *http.Request) {
+	validity, userID := IsJWTValid(w, r)
+	if !validity {
+		respondWithError(w, 403, "Not allowed to delete chirp")
+	} else {
+		fmt.Printf("Got valid JWT for %v\n", userID)
+	}
+
+	pathVal := r.PathValue("id")
+	chirpID, err := strconv.Atoi(pathVal)
+	if err != nil {
+		fmt.Printf("Cannot convert %s to integer\n", pathVal)
+	}
+
+	chirpdb, err := NewDB("database.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	chirp, err := chirpdb.GetChirp(chirpID)
+	if err != nil {
+		msg := fmt.Sprintf("Chirp does not exist: %s", err)
+		respondWithError(w, 404, msg)
+		return
+	}
+
+	if chirp.AuthorID == userID {
+	    chirpdb.DeleteChirp(chirpID)
+	} else {
+	    respondWithError(w, 403, "You're only allowed to delete your own chirps")
+	    return
+	}
+
+	respondWithJSON(w, 204, "")
 }
 
 func userHandler(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +262,7 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, 401, "Authorization failed: couldn't parse token")
 			return
 		} else if claims, ok := token.Claims.(*MyCustomClaims); ok {
-			fmt.Printf("Got token: %s, %s\n", claims.Issuer, claims.ID)
+			fmt.Printf("Got token: %s, %s\n", claims.Issuer, claims.Subject)
 		} else {
 			fmt.Printf("couldn't get token claims:%s, %t\n", err, ok)
 			respondWithError(w, 401, "Authorization failed!")
@@ -258,6 +309,39 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 	respBody.Email = params.Email
 
 	respondWithJSON(w, http.StatusOK, respBody)
+}
+
+func IsJWTValid(w http.ResponseWriter, r *http.Request) (bool, int) {
+	userID := 0
+	godotenv.Load()
+	jwtSecret := os.Getenv("JWT_SECRET")
+	// authorization header required
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		respondWithError(w, 401, "Authorization header required")
+		return false, userID
+	}
+	authTokenS := strings.Split(authHeader, " ")
+	authToken := authTokenS[len(authTokenS)-1]
+	token, err := jwt.ParseWithClaims(authToken, &MyCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(jwtSecret), nil
+	})
+	if err != nil {
+		fmt.Printf("%s\n", err)
+		respondWithError(w, 401, "Authorization failed: couldn't parse token")
+		return false, userID
+	} else if claims, ok := token.Claims.(*MyCustomClaims); ok {
+		userID, err = strconv.Atoi(claims.Subject)
+		if err != nil {
+			fmt.Printf("Error converting %s to int: %s\n", claims.Subject, err)
+		}
+		fmt.Printf("Got token: %s, %s\n", claims.Issuer, claims.Subject)
+	} else {
+		fmt.Printf("couldn't get token claims:%s, %t\n", err, ok)
+		respondWithError(w, 401, "Authorization failed!")
+		return false, 0
+	}
+	return true, userID
 }
 
 func getUserByID(w http.ResponseWriter, r *http.Request) {
@@ -389,9 +473,8 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 
 func refreshToken(w http.ResponseWriter, r *http.Request) {
 
-
 	type returnVals struct {
-		Token        string `json:"token"`
+		Token string `json:"token"`
 	}
 
 	chirpdb, err := NewDB("database.json")
@@ -401,21 +484,21 @@ func refreshToken(w http.ResponseWriter, r *http.Request) {
 
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-	    respondWithError(w, 401, "Authorization header required")
-	    return
+		respondWithError(w, 401, "Authorization header required")
+		return
 	}
 	authTokenS := strings.Split(authHeader, " ")
 	authToken := authTokenS[len(authTokenS)-1]
 	fmt.Printf("You sent %s\n", authToken)
 
-	user, err:=chirpdb.GetUserByRefreshToken(authToken)
-	if err!= nil {
-	    respondWithError(w, 401, fmt.Sprintf("GetUserByRefreshToken err: %s",err))
-	    return
+	user, err := chirpdb.GetUserByRefreshToken(authToken)
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprintf("GetUserByRefreshToken err: %s", err))
+		return
 	}
-	token, err :=generateToken(user.ID)
+	token, err := generateToken(user.ID)
 	retVals := returnVals{
-		Token:        token,
+		Token: token,
 	}
 	respondWithJSON(w, http.StatusOK, retVals)
 }
@@ -428,17 +511,17 @@ func revokeToken(w http.ResponseWriter, r *http.Request) {
 
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-	    respondWithError(w, 401, "Authorization header required")
-	    return
+		respondWithError(w, 401, "Authorization header required")
+		return
 	}
 	authTokenS := strings.Split(authHeader, " ")
 	authToken := authTokenS[len(authTokenS)-1]
 	fmt.Printf("You sent %s\n", authToken)
 
-	user, err:=chirpdb.GetUserByRefreshToken(authToken)
-	if err!= nil {
-	    respondWithError(w, 401, fmt.Sprintf("GetUserByRefreshToken err: %s",err))
-	    return
+	user, err := chirpdb.GetUserByRefreshToken(authToken)
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprintf("GetUserByRefreshToken err: %s", err))
+		return
 	}
 	chirpdb.RevokeRefreshToken(user.ID)
 

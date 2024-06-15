@@ -21,8 +21,9 @@ type User struct {
 	RefreshToken RefreshToken `json:"refresh_token"`
 }
 type Chirp struct {
-	ID   int    `json:"id"`
-	Body string `json:"body"`
+	ID       int    `json:"id"`
+	Body     string `json:"body"`
+	AuthorID int    `json:"author_id"`
 }
 
 type DB struct {
@@ -109,21 +110,33 @@ func (db *DB) GetChirp(id int) (Chirp, error) {
 	return dbs.Chirps[id], nil
 }
 
-func (db *DB) CreateChirp(body string) (Chirp, error) {
+func (db *DB) CreateChirp(body string, userID int) (Chirp, error) {
 	chirps, err := db.GetChirps()
 	if err != nil {
 		return Chirp{}, err
 	}
 	newID := len(chirps) + 1
 	newChirp := Chirp{
-		ID:   newID,
-		Body: body,
+		ID:       newID,
+		Body:     body,
+		AuthorID: userID,
 	}
 	structure, err := db.loadDB()
 	structure.Chirps[newID] = newChirp
 	db.writeDB(structure)
 	fmt.Printf("Added chirp id %v: %s\n", newID, body)
 	return newChirp, nil
+}
+
+func (db *DB) DeleteChirp(chirpID int) error {
+	structure, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+	delete(structure.Chirps, chirpID)
+	db.writeDB(structure)
+	fmt.Printf("Deleted chirp id %v\n", chirpID)
+	return nil
 }
 
 func (db *DB) GetUsers() ([]User, error) {

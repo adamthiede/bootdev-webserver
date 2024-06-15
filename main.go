@@ -46,6 +46,7 @@ func main() {
 	// api/chirps
 	sm.HandleFunc("/api/chirps", chirpHandler)
 	sm.HandleFunc("GET /api/chirps/{id}", getChirpByID)
+	sm.HandleFunc("DELETE /api/chirps/{id}", deleteChirp)
 	// api/users
 	sm.HandleFunc("/api/users", userHandler)
 	sm.HandleFunc("GET /api/users/{id}", getUserByID)
