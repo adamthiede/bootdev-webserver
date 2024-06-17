@@ -175,10 +175,10 @@ func deleteChirp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if chirp.AuthorID == userID {
-	    chirpdb.DeleteChirp(chirpID)
+		chirpdb.DeleteChirp(chirpID)
 	} else {
-	    respondWithError(w, 403, "You're only allowed to delete your own chirps")
-	    return
+		respondWithError(w, 403, "You're only allowed to delete your own chirps")
+		return
 	}
 
 	respondWithJSON(w, 204, "")
@@ -200,9 +200,10 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 	params := parameters{}
 
 	type returnVals struct {
-		ID    int    `json:"id"`
-		Error string `json:"error"`
-		Email string `json:"email"`
+		ID          int    `json:"id"`
+		Error       string `json:"error"`
+		Email       string `json:"email"`
+		IsChirpyRed bool   `json:"is_chirpy_red"`
 	}
 	respBody := returnVals{}
 
@@ -297,6 +298,7 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			respBody.ID = upUser.ID
 			respBody.Email = upUser.Email
+			respBody.IsChirpyRed = upUser.IsChirpyRed
 			respondWithJSON(w, http.StatusOK, respBody)
 		}
 		return
@@ -403,6 +405,7 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	type returnVals struct {
 		ID           int    `json:"id"`
 		Email        string `json:"email"`
+		IsChirpyRed bool `json:"is_chirpy_red"`
 		Token        string `json:"token"`
 		RefreshToken string `json:"refresh_token"`
 	}
@@ -458,6 +461,7 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 		Email:        user.Email,
 		Token:        ss,
 		RefreshToken: refreshToken,
+		IsChirpyRed: user.IsChirpyRed,
 	}
 
 	if err != nil {
@@ -524,6 +528,36 @@ func revokeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chirpdb.RevokeRefreshToken(user.ID)
+
+	respondWithJSON(w, 204, "")
+}
+
+func polkaWebhook(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserID int `json:"user_id"`
+		} `json:"data"`
+	}
+	params := parameters{}
+	decoder := json.NewDecoder(r.Body)
+	err:= decoder.Decode(&params)
+	if err != nil {
+		fmt.Printf("Error decoding parameters: %s\n", err)
+		w.WriteHeader(500)
+		return
+	}
+	chirpdb, err := NewDB("database.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+	if params.Event=="user.upgraded" {
+	    _, err :=chirpdb.UpgradeUserToRed(params.Data.UserID)
+	    if err != nil {
+		respondWithError(w, 404, fmt.Sprintf("User Not Found %s", err))
+		return
+	    }
+	}
 
 	respondWithJSON(w, 204, "")
 }

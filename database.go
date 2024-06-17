@@ -19,6 +19,7 @@ type User struct {
 	Email        string       `json:"email"`
 	Password     []byte       `json:"password"`
 	RefreshToken RefreshToken `json:"refresh_token"`
+	IsChirpyRed  bool         `json:"is_chirpy_red"`
 }
 type Chirp struct {
 	ID       int    `json:"id"`
@@ -213,7 +214,18 @@ func (db *DB) CreateUser(email string, password []byte) (User, error) {
 	fmt.Printf("Added user id %v: %s\n", newID, email)
 	return newUser, nil
 }
-
+func (db *DB) UpgradeUserToRed(id int) (User, error) {
+	structure, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+	theUser := structure.Users[id]
+	theUser.IsChirpyRed = true
+	structure.Users[id] = theUser
+	db.writeDB(structure)
+	fmt.Printf("~~Red~~ user %v: %s\n", id, theUser.Email)
+	return db.GetUser(id)
+}
 func (db *DB) UpdateUser(id int, email string, password []byte) (User, error) {
 	structure, err := db.loadDB()
 	if err != nil {

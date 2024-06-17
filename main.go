@@ -55,6 +55,9 @@ func main() {
 	sm.HandleFunc("POST /api/refresh", refreshToken)
 	sm.HandleFunc("POST /api/revoke", revokeToken)
 
+	// webhook for payment/upgrading user
+	sm.HandleFunc("POST /api/polka/webhooks", polkaWebhook)
+
 	// admin metrics
 	adminMetricsHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "text/html; charset=utf-8")
