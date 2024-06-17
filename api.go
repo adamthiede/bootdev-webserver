@@ -533,6 +533,16 @@ func revokeToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func polkaWebhook(w http.ResponseWriter, r *http.Request) {
+	godotenv.Load()
+	polkaKey:= os.Getenv("POLKA_KEY")
+	authHeader := r.Header.Get("Authorization")
+	authTokenS := strings.Split(authHeader, " ")
+	authToken := authTokenS[len(authTokenS)-1]
+	if authToken != polkaKey {
+		respondWithError(w, 401, "Incorrect polka api key")
+		return
+	}
+
 	type parameters struct {
 		Event string `json:"event"`
 		Data  struct {
