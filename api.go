@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"sort"
 )
 
 type MyCustomClaims struct {
@@ -95,15 +96,59 @@ func chirpHandler(w http.ResponseWriter, r *http.Request) {
 		respBody.AuthorID = chirp.AuthorID
 		fmt.Printf("Added chirp: %s, err %s\n", chirp.Body, err)
 	} else if r.Method == "GET" {
+		sortOrder := r.URL.Query().Get("sort")
+		authorID := r.URL.Query().Get("author_id")
+		if authorID == "" {
+			chirps, err := chirpdb.GetChirps()
+			if err != nil {
+				fmt.Printf("Error getting chirps: %s", err)
+			}
+			fmt.Println(chirps)
+			if sortOrder == "desc" {
+			    sort.Slice(chirps, func(i, j int) bool {
+				return chirps[i].ID> chirps[j].ID
+			    })
 
-		chirps, err := chirpdb.GetChirps()
-		if err != nil {
-			fmt.Printf("Error getting chirps: %s", err)
+			    respondWithJSON(w, http.StatusOK, chirps)
+			} else {
+			    sort.Slice(chirps, func(i, j int) bool {
+				return chirps[i].ID< chirps[j].ID
+			    })
+			    respondWithJSON(w, http.StatusOK, chirps)
+			}
+			return
+		} else {
+			aID, err := strconv.Atoi(authorID)
+			if err != nil {
+				erro := fmt.Sprintf("bad authorID provided: %s", err)
+				respondWithError(w, 500, erro)
+				return
+			}
+			_, err = chirpdb.GetUser(aID)
+			if err != nil {
+				erro := fmt.Sprintf("could not find user %s", err)
+				respondWithError(w, 500, erro)
+				return
+			}
+			chirps, err:=chirpdb.GetChirpsByAuthor(aID)
+			if err != nil {
+			    erro := fmt.Sprintf("could not get chirps for %v: %s", aID, err)
+				respondWithError(w, 500, erro)
+			}
+			if sortOrder == "desc" {
+			    sort.Slice(chirps, func(i, j int) bool {
+				return chirps[i].ID> chirps[j].ID
+			    })
+
+			    respondWithJSON(w, http.StatusOK, chirps)
+			} else {
+			    sort.Slice(chirps, func(i, j int) bool {
+				return chirps[i].ID< chirps[j].ID
+			    })
+			    respondWithJSON(w, http.StatusOK, chirps)
+			}
+			return
 		}
-		fmt.Println(chirps)
-		respondWithJSON(w, http.StatusOK, chirps)
-
-		return
 	} else {
 		fmt.Printf("Method %s not allowed\n", r.Method)
 		return
@@ -405,7 +450,7 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	type returnVals struct {
 		ID           int    `json:"id"`
 		Email        string `json:"email"`
-		IsChirpyRed bool `json:"is_chirpy_red"`
+		IsChirpyRed  bool   `json:"is_chirpy_red"`
 		Token        string `json:"token"`
 		RefreshToken string `json:"refresh_token"`
 	}
@@ -461,7 +506,7 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 		Email:        user.Email,
 		Token:        ss,
 		RefreshToken: refreshToken,
-		IsChirpyRed: user.IsChirpyRed,
+		IsChirpyRed:  user.IsChirpyRed,
 	}
 
 	if err != nil {
@@ -534,7 +579,7 @@ func revokeToken(w http.ResponseWriter, r *http.Request) {
 
 func polkaWebhook(w http.ResponseWriter, r *http.Request) {
 	godotenv.Load()
-	polkaKey:= os.Getenv("POLKA_KEY")
+	polkaKey := os.Getenv("POLKA_KEY")
 	authHeader := r.Header.Get("Authorization")
 	authTokenS := strings.Split(authHeader, " ")
 	authToken := authTokenS[len(authTokenS)-1]
@@ -551,7 +596,7 @@ func polkaWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	params := parameters{}
 	decoder := json.NewDecoder(r.Body)
-	err:= decoder.Decode(&params)
+	err := decoder.Decode(&params)
 	if err != nil {
 		fmt.Printf("Error decoding parameters: %s\n", err)
 		w.WriteHeader(500)
@@ -561,12 +606,12 @@ func polkaWebhook(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	if params.Event=="user.upgraded" {
-	    _, err :=chirpdb.UpgradeUserToRed(params.Data.UserID)
-	    if err != nil {
-		respondWithError(w, 404, fmt.Sprintf("User Not Found %s", err))
-		return
-	    }
+	if params.Event == "user.upgraded" {
+		_, err := chirpdb.UpgradeUserToRed(params.Data.UserID)
+		if err != nil {
+			respondWithError(w, 404, fmt.Sprintf("User Not Found %s", err))
+			return
+		}
 	}
 
 	respondWithJSON(w, 204, "")
